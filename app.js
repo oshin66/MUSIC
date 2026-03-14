@@ -14,7 +14,7 @@
 
 /* ══ 1. CONFIGURATION ═══════════════════════════════════════════════════════ */
 
-const YOUTUBE_API_KEY = 'AIzaSyBkGu3wCLqVskfm4RJeNZjGO4-VLcpYIM0;   // ← PLUG YOUR KEY IN HERE
+const YOUTUBE_API_KEY = 'AIzaSyBkGu3wCLqVskfm4RJeNZjGO4-VLcpYIM0';   // ← PLUG YOUR KEY IN HERE
 const YT_SEARCH_ENDPOINT = 'https://www.googleapis.com/youtube/v3/search';
 const LS_KEY = 'youtify_recently_played';
 const MAX_HISTORY = 20;
@@ -524,22 +524,49 @@ async function searchYouTube(query, maxResults = 15) {
     safeSearch: 'none',
   });
 
-  const res = await fetch(`${YT_SEARCH_ENDPOINT}?${params}`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `HTTP ${res.status}`);
-  }
+  let data;
+  try {
+    const res = await fetch(`${YT_SEARCH_ENDPOINT}?${params}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `HTTP ${res.status}`);
+    }
+    data = await res.json();
+    return (data.items || []).map(item => ({
+      videoId: item.id.videoId,
+      title: item.snippet.title,
+      channel: item.snippet.channelTitle,
+      thumbnail: item.snippet.thumbnails?.medium?.url
+        || item.snippet.thumbnails?.default?.url
+        || '',
+      publishedAt: item.snippet.publishedAt,
+    }));
+  } catch (err) {
+    if (err.message.includes('quota') || err.message.includes('403') || err.message.includes('400')) {
+      console.warn('[Youtify] YouTube API quota exceeded or error. Falling back to Invidious API...');
+      try {
+        const invidiousUrl = `https://vid.puffyan.us/api/v1/search?q=${encodeURIComponent(query + ' "Topic" audio -cover -live -concert -karaoke')}`;
+        // Route through allorigins raw proxy to bypass browser CORS block
+        const invidiousFetch = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(invidiousUrl)}`);
 
-  const data = await res.json();
-  return (data.items || []).map(item => ({
-    videoId: item.id.videoId,
-    title: item.snippet.title,
-    channel: item.snippet.channelTitle,
-    thumbnail: item.snippet.thumbnails?.medium?.url
-      || item.snippet.thumbnails?.default?.url
-      || '',
-    publishedAt: item.snippet.publishedAt,
-  }));
+        if (!invidiousFetch.ok) throw new Error('Invidious fallback proxy failed');
+        const invData = await invidiousFetch.json();
+        return (invData || []).filter(item => item.type === 'video').slice(0, maxResults).map(item => ({
+          videoId: item.videoId,
+          title: item.title,
+          channel: item.author,
+          thumbnail: item.videoThumbnails && item.videoThumbnails.length > 0
+            ? item.videoThumbnails[item.videoThumbnails.length - 1].url
+            : '',
+          publishedAt: new Date(item.published * 1000).toISOString(),
+        }));
+      } catch (fallbackErr) {
+        console.error('[Youtify] Invidious fallback also failed:', fallbackErr);
+        throw new Error('quotaExceeded (Fallback failed)');
+      }
+    }
+    throw err;
+  }
 }
 
 async function searchAndPlay(query, title, artist, el = null, overrideThumbnail = null) {
