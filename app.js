@@ -518,7 +518,7 @@ async function searchYouTube(query, maxResults = 15) {
     part: 'snippet',
     type: 'video',
     videoEmbeddable: 'true',
-    q: query + ' audio -official',
+    q: query + ' "Topic" audio -cover -live -concert -karaoke',
     key: YOUTUBE_API_KEY,
     maxResults: String(maxResults),
     safeSearch: 'none',
@@ -560,10 +560,12 @@ async function searchAndPlay(query, title, artist, el = null, overrideThumbnail 
       showToast('No results found for this track.');
       return;
     }
-    // Store remaining results as retries in case embedding fails
-    state.pendingRetries = results.slice(1);
-    const { videoId, thumbnail } = results[0];
-    playTrack(videoId, title, artist, overrideThumbnail || thumbnail);
+
+    // Force the override thumbnail onto all results so retries maintain the official art
+    const finalThumbnail = overrideThumbnail || results[0].thumbnail;
+    state.pendingRetries = results.slice(1).map(r => ({ ...r, thumbnail: overrideThumbnail || r.thumbnail }));
+    const { videoId } = results[0];
+    playTrack(videoId, title, artist, finalThumbnail);
   } catch (err) {
     console.error('[Youtify] searchAndPlay error:', err);
     if (err.message === 'API_KEY_MISSING') {
@@ -683,7 +685,7 @@ async function fetchAndRenderLiveCharts() {
         title: title,
         artist: artist,
         thumbnail: coverArt,
-        searchQuery: `${cleanTitle} ${artist} audio -official`
+        searchQuery: `${cleanTitle} ${artist} "Topic" audio -cover -live -concert -karaoke`
       };
     });
 
