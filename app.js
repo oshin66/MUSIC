@@ -206,15 +206,20 @@ function onPlayerError(event) {
   console.warn('[Youtify] Player error:', msg);
 
   // Auto-retry with next search result if embedding is blocked
-  if ([101, 150, 153].includes(event.data) && state.pendingRetries.length > 0) {
-    const next = state.pendingRetries.shift();
-    console.log('[Youtify] Retrying with:', next.title);
-    showToast('⏭ Trying another version…');
-    playTrack(next.videoId, state.currentTrack?.title || next.title, state.currentTrack?.artist || next.channel, next.thumbnail);
-    return;
+  if ([101, 150, 153].includes(event.data)) {
+    if (state.pendingRetries.length > 0) {
+      const next = state.pendingRetries.shift();
+      console.log('[Youtify] Retrying with:', next.title);
+      // Silently retry instead of showing confusing toasts
+      playTrack(next.videoId, state.currentTrack?.title || next.title, state.currentTrack?.artist || next.channel, state.currentTrack?.thumbnail || next.thumbnail);
+      return;
+    } else {
+      showToast('⚠ Could not find a playable version for this track.');
+    }
+  } else {
+    showToast(`⚠ ${msg}`);
   }
 
-  showToast(`⚠ ${msg}`);
   state.isPlaying = false;
   setPlayPauseUI(false);
   stopProgressTracking();
@@ -513,7 +518,7 @@ async function searchYouTube(query, maxResults = 15) {
     part: 'snippet',
     type: 'video',
     videoEmbeddable: 'true',
-    q: query + ' audio',
+    q: query + ' audio -official',
     key: YOUTUBE_API_KEY,
     maxResults: String(maxResults),
     safeSearch: 'none',
@@ -537,7 +542,7 @@ async function searchYouTube(query, maxResults = 15) {
   }));
 }
 
-async function searchAndPlay(query, title, artist, el = null) {
+async function searchAndPlay(query, title, artist, el = null, overrideThumbnail = null) {
   if (!isApiKeySet()) {
     showToast('Add your YouTube API key in app.js to play tracks.');
     return;
@@ -558,7 +563,7 @@ async function searchAndPlay(query, title, artist, el = null) {
     // Store remaining results as retries in case embedding fails
     state.pendingRetries = results.slice(1);
     const { videoId, thumbnail } = results[0];
-    playTrack(videoId, title, artist, thumbnail);
+    playTrack(videoId, title, artist, overrideThumbnail || thumbnail);
   } catch (err) {
     console.error('[Youtify] searchAndPlay error:', err);
     if (err.message === 'API_KEY_MISSING') {
@@ -671,11 +676,14 @@ async function fetchAndRenderLiveCharts() {
       const title = entry['im:name'].label;
       const artist = entry['im:artist'].label;
       const cleanTitle = title.split(' (')[0]; // Remove (feat...) for better search
+      const images = entry['im:image'];
+      const coverArt = images && images.length > 0 ? images[images.length - 1].label : '';
       return {
         rank: index + 1,
         title: title,
         artist: artist,
-        searchQuery: `${cleanTitle} ${artist} official audio`
+        thumbnail: coverArt,
+        searchQuery: `${cleanTitle} ${artist} audio -official`
       };
     });
 
@@ -694,11 +702,12 @@ function renderChartsList(tracks, container) {
          data-query="${escHtml(t.searchQuery)}"
          data-title="${escHtml(t.title)}"
          data-artist="${escHtml(t.artist)}"
+         ${t.thumbnail ? `data-thumbnail="${escHtml(t.thumbnail)}"` : ''}
          tabindex="0"
          aria-label="Play ${escHtml(t.title)} by ${escHtml(t.artist)}">
       <div class="chart-rank">${String(t.rank).padStart(2, '0')}</div>
       <div class="chart-thumb">
-        <div class="chart-thumb-fallback">🎵</div>
+        ${t.thumbnail ? `<img src="${escHtml(t.thumbnail)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:var(--r-xs);" />` : `<div class="chart-thumb-fallback">🎵</div>`}
         <div class="chart-thumb-overlay">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <polygon points="5,3 19,12 5,21"/>
@@ -1013,12 +1022,12 @@ function initEventListeners() {
     list.addEventListener('click', e => {
       const item = e.target.closest('.chart-item');
       if (!item) return;
-      searchAndPlay(item.dataset.query, item.dataset.title, item.dataset.artist, item);
+      searchAndPlay(item.dataset.query, item.dataset.title, item.dataset.artist, item, item.dataset.thumbnail);
     });
     list.addEventListener('keydown', e => {
       if (e.key === 'Enter' || e.key === ' ') {
         const item = e.target.closest('.chart-item');
-        if (item) { e.preventDefault(); searchAndPlay(item.dataset.query, item.dataset.title, item.dataset.artist, item); }
+        if (item) { e.preventDefault(); searchAndPlay(item.dataset.query, item.dataset.title, item.dataset.artist, item, item.dataset.thumbnail); }
       }
     });
   });
@@ -1030,7 +1039,7 @@ function initEventListeners() {
       const card = e.target.closest('.radio-card');
       if (!card) return;
       const title = card.querySelector('.radio-title')?.textContent || 'Radio';
-      searchAndPlay(card.dataset.query, title, 'Youtify Radio', card);
+      searchAndPlay(card.dataset.query, title, 'Youtify Radio', card, card.dataset.thumbnail);
     });
   }
 
@@ -1040,7 +1049,7 @@ function initEventListeners() {
     recGrid.addEventListener('click', e => {
       const card = e.target.closest('.rec-card');
       if (!card) return;
-      searchAndPlay(card.dataset.query, card.dataset.title, card.dataset.artist, card);
+      searchAndPlay(card.dataset.query, card.dataset.title, card.dataset.artist, card, card.dataset.thumbnail);
     });
   }
 
@@ -1051,7 +1060,7 @@ function initEventListeners() {
       const chip = e.target.closest('.artist-chip');
       if (!chip) return;
       const name = chip.querySelector('.artist-name')?.textContent || 'Artist';
-      searchAndPlay(chip.dataset.query, name + ' Mix', name, chip);
+      searchAndPlay(chip.dataset.query, name + ' Mix', name, chip, chip.dataset.thumbnail);
     });
   }
 
