@@ -14,7 +14,7 @@
 
 /* ══ 1. CONFIGURATION ═══════════════════════════════════════════════════════ */
 
-const YOUTUBE_API_KEY = 'AIzaSyDHB1KhoAoeG52lOlDDgJIqefHNqqOFwmE';   // ← PLUG YOUR KEY IN HERE
+const YOUTUBE_API_KEY = 'AIzaSyBkGu3wCLqVskfm4RJeNZjGO4-VLcpYIM0;   // ← PLUG YOUR KEY IN HERE
 const YT_SEARCH_ENDPOINT = 'https://www.googleapis.com/youtube/v3/search';
 const LS_KEY = 'youtify_recently_played';
 const MAX_HISTORY = 20;
